@@ -604,6 +604,11 @@
 <div class="modal-overlay" id="importModal">
   <div class="modal">
     <h3>📥 Import Recipients (JSON)</h3>
+    <p style="color:var(--text2);font-size:12px;line-height:1.6;margin-bottom:4px;">
+      Supports two formats:<br>
+      <b style="color:var(--text)">① Standard</b> — <code>[{"name":"...","chatId":"...","network":"instagram"}]</code><br>
+      <b style="color:var(--text)">② copilot-find-new-clients export</b> — auto-detects from <code>facebook</code> URL field. Chat is resolved automatically on first send.
+    </p>
     <div class="form-group">
       <label>Upload JSON file</label>
       <input type="file" id="importFile" accept=".json,application/json" onchange="handleFileImport(this)" style="color:var(--text2);" />
@@ -772,11 +777,12 @@
       const color = avatarColor(r.name);
       const isChecked = selectedIds.includes(r.id);
       const netIcon = r.network === 'facebook' ? '💬' : '📸';
+      const pendingBadge = !r.chatId ? '<span style="color:var(--warn);font-size:10px;margin-left:4px;">⏳ pending</span>' : '';
       return `<div class="recipient-item ${isChecked ? 'selected' : ''}" id="item-${r.id}">
         <input type="checkbox" class="recipient-cb" data-id="${r.id}" ${isChecked ? 'checked' : ''} onchange="onCheckChange()" />
         <div class="avatar" style="background:${color}">${initials}</div>
         <div class="recipient-info">
-          <div class="recipient-name">${netIcon} ${escHtml(r.name)}</div>
+          <div class="recipient-name">${netIcon} ${escHtml(r.name)}${pendingBadge}</div>
           <div class="recipient-username">${r.username ? '@' + escHtml(r.username) : escHtml(r.chatId)}</div>
         </div>
         <button class="btn-delete-small" title="Delete" onclick="deleteRecipient(${r.id}, event)">🗑</button>

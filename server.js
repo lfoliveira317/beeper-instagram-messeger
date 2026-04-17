@@ -136,6 +136,44 @@ async function writeRecipients(recipients) {
   await fs.writeFile(RECIPIENTS_FILE, JSON.stringify(recipients, null, 2), 'utf8');
 }
 
+// Extract username from a Facebook URL (handles pages, profiles, etc.)
+function extractFacebookUsername(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    const parts = u.pathname.replace(/\/$/, '').split('/').filter(Boolean);
+    return parts[parts.length - 1] || '';
+  } catch {
+    return '';
+  }
+}
+
+// Resolve chatId for a recipient (if missing, start chat via username) and persist it
+async function resolveRecipientChat(beeper, recipient, allRecipients) {
+  if (recipient.chatId) return recipient.chatId;
+  if (!recipient.username) throw new Error(`Recipient "${recipient.name}" has no chatId or username`);
+
+  const network = recipient.network || 'facebook';
+  const accountsRes = await beeper.get('/v1/accounts');
+  const account = accountsRes.data.find(a => a.accountID?.toLowerCase().includes(network.toLowerCase()));
+  if (!account) throw new Error(`No ${network} account connected in Beeper`);
+
+  const chatRes = await beeper.post('/v1/chats', {
+    accountID: account.accountID,
+    mode: 'start',
+    user: { username: recipient.username },
+  });
+  const chatId = chatRes.data.chatID;
+
+  // Persist resolved chatId so future sends skip this step
+  const idx = allRecipients.findIndex(r => r.id === recipient.id);
+  if (idx !== -1) {
+    allRecipients[idx].chatId = chatId;
+    await writeRecipients(allRecipients);
+  }
+  return chatId;
+}
+
 // ── API routes ───────────────────────────────────────────────────────────────
 
 // GET /api/status
@@ -235,14 +273,16 @@ app.post('/api/broadcast', async (req, res) => {
     if (ids && Array.isArray(ids) && ids.length > 0) {
       recipients = recipients.filter(r => ids.includes(r.id));
     }
+    const all = await readRecipients(); // full list for persisting resolved chatIds
     const results = [];
     for (let i = 0; i < recipients.length; i++) {
       const recipient = recipients[i];
       try {
-        const r = await beeper.post(`/v1/chats/${encodeURIComponent(recipient.chatId)}/messages`, { text: message });
-        results.push({ id: recipient.id, name: recipient.name, chatId: recipient.chatId, success: true, result: r.data });
+        const chatId = await resolveRecipientChat(beeper, recipient, all);
+        const r = await beeper.post(`/v1/chats/${encodeURIComponent(chatId)}/messages`, { text: message });
+        results.push({ id: recipient.id, name: recipient.name, chatId, success: true, result: r.data });
       } catch (err) {
-        results.push({ id: recipient.id, name: recipient.name, chatId: recipient.chatId, success: false, error: err.message });
+        results.push({ id: recipient.id, name: recipient.name, chatId: recipient.chatId || '', success: false, error: err.message });
       }
       if (i < recipients.length - 1) {
         await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -289,16 +329,47 @@ app.post('/api/recipients/import', async (req, res) => {
   }
   try {
     const recipients = await readRecipients();
-    const existingIds = new Set(recipients.map(r => r.chatId));
+    const existingChatIds = new Set(recipients.map(r => r.chatId).filter(Boolean));
+    const existingUsernames = new Set(recipients.map(r => `${r.network || 'instagram'}:${r.username}`).filter(u => !u.endsWith(':')));
     let maxId = recipients.reduce((m, r) => Math.max(m, r.id || 0), 0);
     let added = 0;
+
     for (const item of incoming) {
-      if (!item.chatId || existingIds.has(item.chatId)) continue;
+      // ── Detect copilot-find-new-clients format (has 'facebook' URL field) ──
+      if (item.facebook && !item.chatId) {
+        const username = extractFacebookUsername(item.facebook);
+        if (!username) continue;
+        const key = `facebook:${username}`;
+        if (existingUsernames.has(key)) continue;
+        maxId++;
+        recipients.push({
+          id: maxId,
+          name: item.name || username,
+          chatId: '',
+          username,
+          network: 'facebook',
+          note: [item.types, item.city, item.phone].filter(Boolean).join(' | '),
+        });
+        existingUsernames.add(key);
+        added++;
+        continue;
+      }
+
+      // ── Standard format (has chatId) ──
+      if (!item.chatId || existingChatIds.has(item.chatId)) continue;
       maxId++;
-      recipients.push({ id: maxId, name: item.name || item.chatId, chatId: item.chatId, username: item.username || '', note: item.note || '', network: item.network || 'instagram' });
-      existingIds.add(item.chatId);
+      recipients.push({
+        id: maxId,
+        name: item.name || item.chatId,
+        chatId: item.chatId,
+        username: item.username || '',
+        note: item.note || '',
+        network: item.network || 'instagram',
+      });
+      existingChatIds.add(item.chatId);
       added++;
     }
+
     await writeRecipients(recipients);
     res.json({ success: true, added, total: recipients.length });
   } catch (err) {
