@@ -148,23 +148,31 @@ function extractFacebookUsername(url) {
   }
 }
 
-// Resolve chatId for a recipient (if missing, start chat via username) and persist it
+// Resolve chatId for a recipient (if missing, find via search) and persist it
 // accountsCache: pre-fetched accounts array to avoid repeated /v1/accounts calls
 async function resolveRecipientChat(beeper, recipient, allRecipients, accountsCache) {
   if (recipient.chatId) return recipient.chatId;
   if (!recipient.username) throw new Error(`Recipient "${recipient.name}" has no chatId or username`);
 
-  const network = recipient.network || 'facebook';
+  const network = recipient.network || 'instagram';
   const accounts = accountsCache || (await beeper.get('/v1/accounts')).data;
   const account = accounts.find(a => a.accountID?.toLowerCase().includes(network.toLowerCase()));
   if (!account) throw new Error(`No ${network} account connected in Beeper`);
 
-  const chatRes = await beeper.post('/v1/chats', {
-    accountID: account.accountID,
-    mode: 'start',
-    user: { username: recipient.username },
+  // Search for an existing chat by username — works for Instagram/Facebook
+  const searchRes = await beeper.get('/v1/search', {
+    params: { query: recipient.username, accountID: account.accountID },
   });
-  const chatId = chatRes.data.chatID;
+  const chats = searchRes.data?.results?.chats ?? [];
+  const match = chats.find(c =>
+    c.participants?.items?.some(
+      p => !p.isSelf && p.username?.toLowerCase() === recipient.username.toLowerCase()
+    ) || c.title?.toLowerCase() === recipient.username.toLowerCase()
+  );
+  if (!match) {
+    throw new Error(`No existing chat found for @${recipient.username} on ${network}. Start a conversation first.`);
+  }
+  const chatId = match.id;
 
   // Persist resolved chatId so future sends skip this step
   const idx = allRecipients.findIndex(r => r.id === recipient.id);
@@ -196,7 +204,7 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
-// POST /api/send-to-username — start/find a chat with a user on a given network and send a message
+// POST /api/send-to-username — find an existing chat with a user and send a message
 app.post('/api/send-to-username', async (req, res) => {
   const { username, message, network = 'instagram' } = req.body;
   if (!username || !message) {
@@ -209,12 +217,19 @@ app.post('/api/send-to-username', async (req, res) => {
     if (!account) {
       return res.status(400).json({ success: false, error: `No ${network} account connected in Beeper` });
     }
-    const chatRes = await beeper.post('/v1/chats', {
-      accountID: account.accountID,
-      mode: 'start',
-      user: { username },
+    // Search for existing chat
+    const searchRes = await beeper.get('/v1/search', {
+      params: { query: username, accountID: account.accountID },
     });
-    const chatId = chatRes.data.chatID;
+    const chats = searchRes.data?.results?.chats ?? [];
+    const match = chats.find(c =>
+      c.participants?.items?.some(p => !p.isSelf && p.username?.toLowerCase() === username.toLowerCase())
+      || c.title?.toLowerCase() === username.toLowerCase()
+    );
+    if (!match) {
+      return res.status(404).json({ success: false, error: `No existing chat found for @${username} on ${network}. Start a conversation first in Beeper.` });
+    }
+    const chatId = match.id;
     const msgRes = await beeper.post(`/v1/chats/${encodeURIComponent(chatId)}/messages`, { text: message });
     res.json({ success: true, chatId, result: msgRes.data });
   } catch (err) {
