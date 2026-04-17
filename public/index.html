@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beeper Instagram Messenger</title>
+  <style>
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --surface2: #22223a;
+      --accent: #7c5cbf;
+      --accent2: #a27de0;
+      --text: #e8e8f0;
+      --text2: #9090b0;
+      --success: #4caf80;
+      --error: #e05050;
+      --warn: #e0a040;
+      --border: #2a2a40;
+      --radius: 10px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* HEADER */
+    header {
+      height: 60px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      flex-shrink: 0;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .header-left span.icon { font-size: 24px; }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+    }
+
+    .status-badge .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--error);
+    }
+
+    .status-badge.connected .dot { background: var(--success); }
+
+    /* MAIN */
+    .main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* LEFT PANEL */
+    .left-panel {
+      width: 360px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 15px;
+    }
+
+    .count-badge {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 12px;
+      padding: 1px 8px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .toolbar {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toolbar label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text2); font-size: 13px; }
+
+    .search-input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      padding: 6px 10px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .search-input:focus { border-color: var(--accent); }
+
+    .btn-row {
+      padding: 8px 12px;
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: background 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn:hover { background: var(--accent); border-color: var(--accent); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      font-size: 13px;
+      padding: 8px 18px;
+    }
+
+    .btn-primary:hover { background: var(--accent2); border-color: var(--accent2); }
+
+    .btn-danger { color: var(--error); }
+    .btn-danger:hover { background: var(--error); border-color: var(--error); color: #fff; }
+
+    .recipient-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+
+    .recipient-list::-webkit-scrollbar { width: 6px; }
+    .recipient-list::-webkit-scrollbar-track { background: transparent; }
+    .recipient-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .recipient-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.1s, border-color 0.1s;
+    }
+
+    .recipient-item:hover { background: var(--surface2); }
+    .recipient-item.selected { border-left-color: var(--accent); background: rgba(124,92,191,0.12); }
+
+    .recipient-item input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
+
+    .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      flex-shrink: 0;
+      color: #fff;
+    }
+
+    .recipient-info { flex: 1; min-width: 0; }
+    .recipient-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .recipient-username { color: var(--text2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .btn-delete-small {
+      background: none;
+      border: none;
+      color: var(--text2);
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 6px;
+      font-size: 14px;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.15s;
+    }
+
+    .recipient-item:hover .btn-delete-small { opacity: 1; }
+    .btn-delete-small:hover { color: var(--error); background: rgba(224,80,80,0.15); }
+
+    /* RIGHT PANEL */
+    .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 24px;
+      overflow-y: auto;
+      gap: 16px;
+    }
+
+    .compose-section h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text2); }
+
+    textarea#messageInput {
+      width: 100%;
+      min-height: 150px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      padding: 12px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    textarea#messageInput:focus { border-color: var(--accent); }
+
+    .char-counter {
+      text-align: right;
+      color: var(--text2);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    .delay-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+    }
+
+    .delay-row label { color: var(--text2); font-size: 13px; flex-shrink: 0; }
+
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .delay-value {
+      font-weight: 600;
+      color: var(--accent2);
+      min-width: 32px;
+      text-align: right;
+      font-size: 13px;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .action-buttons .btn-primary {
+      flex: 1;
+      min-width: 180px;
+      text-align: center;
+    }
+
+    .selected-info {
+      color: var(--text2);
+      font-size: 13px;
+      padding: 8px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+
+    /* ACTIVITY LOG */
+    .activity-section {
+      height: 200px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .activity-header {
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .log-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+
+    .log-container::-webkit-scrollbar { width: 6px; }
+    .log-container::-webkit-scrollbar-track { background: transparent; }
+    .log-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .log-entry {
+      padding: 3px 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .log-ts { color: var(--text2); flex-shrink: 0; }
+    .log-icon { flex-shrink: 0; }
+    .log-msg { flex: 1; word-break: break-word; }
+    .log-entry.success .log-msg { color: var(--success); }
+    .log-entry.error .log-msg { color: var(--error); }
+    .log-entry.info .log-msg { color: #6ab4f5; }
+    .log-entry.warn .log-msg { color: var(--warn); }
+
+    /* MODALS */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      width: 460px;
+      max-width: 95vw;
+      max-height: 85vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .modal h3 { font-size: 16px; font-weight: 600; }
+
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { color: var(--text2); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    .form-group input, .form-group textarea, .form-group select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .form-group input:focus, .form-group textarea:focus { border-color: var(--accent); }
+    .form-group textarea { min-height: 100px; resize: vertical; }
+
+    .modal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+
+    .beeper-chat-list { display: flex; flex-direction: column; gap: 6px; max-height: 340px; overflow-y: auto; }
+
+    .beeper-chat-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      background: var(--surface2);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    .beeper-chat-item input[type="checkbox"] { accent-color: var(--accent); }
+    .beeper-chat-item .chat-info { flex: 1; min-width: 0; }
+    .beeper-chat-item .chat-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .beeper-chat-item .chat-id { color: var(--text2); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* TOASTS */
+    #toast-container {
+      position: fixed;
+      bottom: 220px;
+      right: 20px;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: flex-end;
+    }
+
+    .toast {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 16px;
+      font-size: 13px;
+      max-width: 320px;
+      animation: slideIn 0.2s ease;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    .toast.success { border-left: 3px solid var(--success); }
+    .toast.error { border-left: 3px solid var(--error); }
+    .toast.info { border-left: 3px solid #6ab4f5; }
+
+    @keyframes slideIn {
+      from { transform: translateX(30px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    input[type="checkbox"] { cursor: pointer; }
+
+    .empty-state {
+      text-align: center;
+      color: var(--text2);
+      padding: 40px 16px;
+      font-size: 13px;
+    }
+
+    .empty-state .emoji { font-size: 32px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="header-left">
+    <span class="icon">📸</span>
+    <span>Beeper Instagram Messenger</span>
+  </div>
+  <div class="status-badge" id="statusBadge">
+    <div class="dot"></div>
+    <span id="statusText">Checking...</span>
+  </div>
+</header>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- LEFT: Recipients -->
+  <div class="left-panel">
+    <div class="panel-header">
+      Recipients
+      <span class="count-badge" id="recipientCount">0</span>
+    </div>
+    <div class="toolbar">
+      <label>
+        <input type="checkbox" id="selectAllCb" />
+        All
+      </label>
+      <input type="text" class="search-input" id="searchInput" placeholder="Search..." />
+    </div>
+    <div class="btn-row">
+      <button class="btn" onclick="openImportModal()">📥 Import JSON</button>
+      <button class="btn" onclick="openBeeperModal()">🔄 Load from Beeper</button>
+      <button class="btn" onclick="openAddModal()">➕ Add</button>
+    </div>
+    <div class="recipient-list" id="recipientList"></div>
+  </div>
+
+  <!-- RIGHT: Compose -->
+  <div class="right-panel">
+    <div class="compose-section">
+      <h2>Compose Message</h2>
+      <textarea id="messageInput" placeholder="Type your message..." maxlength="1000" oninput="updateCharCounter()"></textarea>
+      <div class="char-counter"><span id="charCount">0</span> / 1000</div>
+    </div>
+
+    <div class="delay-row">
+      <label>⏱ Delay between sends:</label>
+      <input type="range" id="delaySlider" min="1" max="10" value="2" step="1" oninput="document.getElementById('delayValue').textContent = this.value + 's'" />
+      <span class="delay-value" id="delayValue">2s</span>
+    </div>
+
+    <div class="selected-info" id="selectedInfo">No recipients selected. Check recipients on the left.</div>
+
+    <div class="action-buttons">
+      <button class="btn btn-primary" id="btnBroadcast" onclick="broadcastSelected()" disabled>📢 Broadcast to Selected</button>
+      <button class="btn btn-primary" id="btnSendAll" onclick="broadcastAll()" disabled>📨 Send to All</button>
+    </div>
+  </div>
+</div>
+
+<!-- ACTIVITY LOG -->
+<div class="activity-section">
+  <div class="activity-header">
+    📊 Activity Log
+    <button class="btn" onclick="clearLog()" style="padding:4px 10px;font-size:12px;">Clear</button>
+  </div>
+  <div class="log-container" id="logContainer"></div>
+</div>
+
+<!-- MODAL: Add Recipient -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <h3>➕ Add Recipient</h3>
+    <div class="form-group">
+      <label>Name *</label>
+      <input type="text" id="addName" placeholder="e.g. John Doe" />
+    </div>
+    <div class="form-group">
+      <label>Chat ID *</label>
+      <input type="text" id="addChatId" placeholder="e.g. !xxxxxx:beeper.local" />
+    </div>
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" id="addUsername" placeholder="Instagram username" />
+    </div>
+    <div class="form-group">
+      <label>Note</label>
+      <input type="text" id="addNote" placeholder="Optional note" />
+    </div>
+    <div class="modal-btns">
+      <button class="btn" onclick="closeModal('addModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNewRecipient()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Import JSON -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal">
+    <h3>📥 Import Recipients (JSON)</h3>
+    <div class="form-group">
+      <label>Upload JSON file</label>
+      <input type="file" id="importFile" accept=".json,application/json" onchange="handleFileImport(this)" style="color:var(--text2);" />
+    </div>
+    <div class="form-group">
+      <label>Or paste JSON array</label>
+      <textarea id="importText" placeholder='[{"name":"...","chatId":"...","username":"..."}]'></textarea>
+    </div>
+    <div class="modal-btns">
+      <button class="btn" onclick="closeModal('importModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doImport()">Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Load from Beeper -->
+<div class="modal-overlay" id="beeperModal">
+  <div class="modal" style="width:520px;">
+    <h3>🔄 Load from Beeper Instagram</h3>
+    <div id="beeperModalContent">
+      <p style="color:var(--text2);font-size:13px;">Fetching your Instagram chats from Beeper...</p>
+    </div>
+    <div class="modal-btns" id="beeperModalBtns" style="display:none;">
+      <button class="btn" onclick="closeModal('beeperModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveBeeperChats()">Save Checked</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<script>
+  let allRecipients = [];
+  let beeperChats = [];
+
+  // ── INIT ──────────────────────────────────────────────────────────────────
+  async function init() {
+    await fetchRecipients();
+    checkStatus();
+    setInterval(checkStatus, 30000);
+    addLogEntry('info', 'Application started.');
+  }
+
+  // ── STATUS ─────────────────────────────────────────────────────────────────
+  async function checkStatus() {
+    try {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      const badge = document.getElementById('statusBadge');
+      const text = document.getElementById('statusText');
+      if (data.connected) {
+        badge.classList.add('connected');
+        text.textContent = 'Connected';
+      } else {
+        badge.classList.remove('connected');
+        text.textContent = 'Disconnected';
+      }
+    } catch {
+      document.getElementById('statusBadge').classList.remove('connected');
+      document.getElementById('statusText').textContent = 'Disconnected';
+    }
+  }
+
+  // ── RECIPIENTS ─────────────────────────────────────────────────────────────
+  async function fetchRecipients() {
+    try {
+      const res = await fetch('/api/recipients');
+      allRecipients = await res.json();
+      renderRecipients();
+    } catch (e) {
+      addLogEntry('error', 'Failed to load recipients: ' + e.message);
+    }
+  }
+
+  function getSelectedIds() {
+    return Array.from(document.querySelectorAll('.recipient-cb:checked')).map(cb => parseInt(cb.dataset.id, 10));
+  }
+
+  function renderRecipients(filter) {
+    const search = (filter ?? document.getElementById('searchInput').value).toLowerCase();
+    const list = document.getElementById('recipientList');
+    const filtered = allRecipients.filter(r =>
+      r.name.toLowerCase().includes(search) ||
+      (r.username || '').toLowerCase().includes(search)
+    );
+
+    document.getElementById('recipientCount').textContent = allRecipients.length;
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<div class="empty-state"><div class="emoji">📭</div>${allRecipients.length === 0 ? 'No recipients yet. Add one!' : 'No results.'}</div>`;
+      updateSelectedInfo();
+      return;
+    }
+
+    const selectedIds = getSelectedIds();
+
+    list.innerHTML = filtered.map(r => {
+      const initials = r.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+      const color = avatarColor(r.name);
+      const isChecked = selectedIds.includes(r.id);
+      return `<div class="recipient-item ${isChecked ? 'selected' : ''}" id="item-${r.id}">
+        <input type="checkbox" class="recipient-cb" data-id="${r.id}" ${isChecked ? 'checked' : ''} onchange="onCheckChange()" />
+        <div class="avatar" style="background:${color}">${initials}</div>
+        <div class="recipient-info">
+          <div class="recipient-name">${escHtml(r.name)}</div>
+          <div class="recipient-username">${r.username ? '@' + escHtml(r.username) : escHtml(r.chatId)}</div>
+        </div>
+        <button class="btn-delete-small" title="Delete" onclick="deleteRecipient(${r.id}, event)">🗑</button>
+      </div>`;
+    }).join('');
+
+    updateSelectedInfo();
+  }
+
+  function onCheckChange() {
+    const allCbs = document.querySelectorAll('.recipient-cb');
+    const checkedCbs = document.querySelectorAll('.recipient-cb:checked');
+    document.getElementById('selectAllCb').checked = allCbs.length > 0 && checkedCbs.length === allCbs.length;
+    document.querySelectorAll('.recipient-item').forEach(item => {
+      const cb = item.querySelector('.recipient-cb');
+      item.classList.toggle('selected', cb && cb.checked);
+    });
+    updateSelectedInfo();
+  }
+
+  function updateSelectedInfo() {
+    const selected = getSelectedIds().length;
+    const total = allRecipients.length;
+    const info = document.getElementById('selectedInfo');
+    const msgVal = document.getElementById('messageInput').value.trim();
+    if (selected === 0) {
+      info.textContent = `No recipients selected. ${total} available.`;
+    } else {
+      info.textContent = `${selected} of ${total} recipients selected.`;
+    }
+    document.getElementById('btnBroadcast').disabled = selected === 0 || !msgVal;
+    document.getElementById('btnSendAll').disabled = total === 0 || !msgVal;
+  }
+
+  function updateCharCounter() {
+    const val = document.getElementById('messageInput').value;
+    document.getElementById('charCount').textContent = val.length;
+    updateSelectedInfo();
+  }
+
+  document.getElementById('selectAllCb').addEventListener('change', function() {
+    document.querySelectorAll('.recipient-cb').forEach(cb => { cb.checked = this.checked; });
+    onCheckChange();
+  });
+
+  document.getElementById('searchInput').addEventListener('input', function() {
+    renderRecipients(this.value);
+  });
+
+  async function deleteRecipient(id, e) {
+    e.stopPropagation();
+    if (!confirm('Delete this recipient?')) return;
+    try {
+      await fetch(`/api/recipients/${id}`, { method: 'DELETE' });
+      allRecipients = allRecipients.filter(r => r.id !== id);
+      renderRecipients();
+      addLogEntry('info', `Recipient #${id} deleted.`);
+      showToast('Recipient deleted.', 'info');
+    } catch (err) {
+      addLogEntry('error', 'Failed to delete: ' + err.message);
+    }
+  }
+
+  // ── ADD RECIPIENT MODAL ────────────────────────────────────────────────────
+  function openAddModal() {
+    ['addName','addChatId','addUsername','addNote'].forEach(id => document.getElementById(id).value = '');
+    openModal('addModal');
+  }
+
+  async function saveNewRecipient() {
+    const name = document.getElementById('addName').value.trim();
+    const chatId = document.getElementById('addChatId').value.trim();
+    const username = document.getElementById('addUsername').value.trim();
+    const note = document.getElementById('addNote').value.trim();
+    if (!name || !chatId) { showToast('Name and Chat ID are required.', 'error'); return; }
+    try {
+      const res = await fetch('/api/recipients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, chatId, username, note }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        closeModal('addModal');
+        await fetchRecipients();
+        addLogEntry('success', `Added recipient: ${name}`);
+        showToast(`Added ${name}`, 'success');
+      } else {
+        showToast(data.error || 'Failed to add.', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // ── IMPORT JSON MODAL ──────────────────────────────────────────────────────
+  function openImportModal() {
+    document.getElementById('importText').value = '';
+    document.getElementById('importFile').value = '';
+    openModal('importModal');
+  }
+
+  function handleFileImport(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => { document.getElementById('importText').value = e.target.result; };
+    reader.readAsText(file);
+  }
+
+  async function doImport() {
+    const text = document.getElementById('importText').value.trim();
+    if (!text) { showToast('Please provide JSON data.', 'error'); return; }
+    let arr;
+    try { arr = JSON.parse(text); } catch { showToast('Invalid JSON.', 'error'); return; }
+    if (!Array.isArray(arr)) { showToast('JSON must be an array.', 'error'); return; }
+    try {
+      const res = await fetch('/api/recipients/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(arr),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        closeModal('importModal');
+        await fetchRecipients();
+        addLogEntry('success', `Imported: ${data.added} new recipients (total: ${data.total})`);
+        showToast(`Imported ${data.added} recipients.`, 'success');
+      } else {
+        showToast(data.error || 'Import failed.', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // ── LOAD FROM BEEPER MODAL ─────────────────────────────────────────────────
+  async function openBeeperModal() {
+    beeperChats = [];
+    document.getElementById('beeperModalContent').innerHTML = '<p style="color:var(--text2);font-size:13px;">Fetching Instagram chats from Beeper...</p>';
+    document.getElementById('beeperModalBtns').style.display = 'none';
+    openModal('beeperModal');
+    try {
+      const res = await fetch('/api/chats');
+      beeperChats = await res.json();
+      if (!Array.isArray(beeperChats) || beeperChats.length === 0) {
+        document.getElementById('beeperModalContent').innerHTML = '<p style="color:var(--warn);">No Instagram chats found. Make sure Beeper is running and the instagramgo account is connected.</p>';
+        return;
+      }
+      const existingIds = new Set(allRecipients.map(r => r.chatId));
+      document.getElementById('beeperModalContent').innerHTML = `
+        <p style="color:var(--text2);font-size:13px;margin-bottom:10px;">Found ${beeperChats.length} Instagram chats. Select which to import:</p>
+        <div class="beeper-chat-list">
+          ${beeperChats.map((c, i) => `
+            <div class="beeper-chat-item">
+              <input type="checkbox" id="bc-${i}" data-index="${i}" ${existingIds.has(c.chatId) ? 'disabled title="Already added"' : 'checked'} />
+              <div class="chat-info">
+                <div class="chat-name">${escHtml(c.name || c.chatId)}</div>
+                <div class="chat-id">${escHtml(c.chatId)}</div>
+              </div>
+              ${existingIds.has(c.chatId) ? '<span style="color:var(--success);font-size:11px;">✔ exists</span>' : ''}
+            </div>`).join('')}
+        </div>`;
+      document.getElementById('beeperModalBtns').style.display = 'flex';
+    } catch (err) {
+      document.getElementById('beeperModalContent').innerHTML = `<p style="color:var(--error);">Error: ${escHtml(err.message)}</p>`;
+    }
+  }
+
+  async function saveBeeperChats() {
+    const checked = Array.from(document.querySelectorAll('.beeper-chat-list input[type="checkbox"]:checked:not(:disabled)'));
+    if (checked.length === 0) { showToast('No chats selected.', 'error'); return; }
+    const toImport = checked.map(cb => {
+      const c = beeperChats[parseInt(cb.dataset.index, 10)];
+      return { name: c.name, chatId: c.chatId, username: c.username || c.name };
+    });
+    try {
+      const res = await fetch('/api/recipients/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(toImport),
+      });
+      const data = await res.json();
+      closeModal('beeperModal');
+      await fetchRecipients();
+      addLogEntry('success', `Saved ${data.added} chats from Beeper.`);
+      showToast(`Saved ${data.added} recipients.`, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // ── BROADCAST ──────────────────────────────────────────────────────────────
+  async function broadcastSelected() {
+    const ids = getSelectedIds();
+    if (ids.length === 0) { showToast('Select recipients first.', 'error'); return; }
+    await runBroadcast(ids);
+  }
+
+  async function broadcastAll() {
+    if (allRecipients.length === 0) { showToast('No recipients available.', 'error'); return; }
+    await runBroadcast(null);
+  }
+
+  async function runBroadcast(ids) {
+    const message = document.getElementById('messageInput').value.trim();
+    if (!message) { showToast('Type a message first.', 'error'); return; }
+    const delay = parseInt(document.getElementById('delaySlider').value, 10) * 1000;
+    const targetCount = ids ? ids.length : allRecipients.length;
+    addLogEntry('info', `Broadcasting to ${targetCount} recipient(s) with ${delay/1000}s delay...`);
+
+    document.getElementById('btnBroadcast').disabled = true;
+    document.getElementById('btnSendAll').disabled = true;
+
+    try {
+      const body = { message, delay };
+      if (ids) body.ids = ids;
+      const res = await fetch('/api/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.results) {
+        data.results.forEach(r => {
+          if (r.success) {
+            addLogEntry('success', `✅ Sent to ${r.name} (${r.chatId.slice(0, 20)}...)`);
+          } else {
+            addLogEntry('error', `❌ Failed to ${r.name}: ${r.error}`);
+          }
+        });
+        const ok = data.results.filter(r => r.success).length;
+        const fail = data.results.length - ok;
+        showToast(`Broadcast done: ${ok} sent, ${fail} failed.`, ok > 0 ? 'success' : 'error');
+        addLogEntry('info', `Broadcast complete: ${ok}/${data.results.length} sent.`);
+      } else {
+        addLogEntry('error', 'Broadcast failed: ' + (data.error || 'Unknown error'));
+        showToast(data.error || 'Broadcast failed.', 'error');
+      }
+    } catch (err) {
+      addLogEntry('error', 'Broadcast error: ' + err.message);
+      showToast(err.message, 'error');
+    }
+
+    updateSelectedInfo();
+  }
+
+  // ── LOG ─────────────────────────────────────────────────────────────────────
+  function addLogEntry(type, message) {
+    const container = document.getElementById('logContainer');
+    const icons = { success: '✅', error: '❌', info: 'ℹ️', warn: '⚠️' };
+    const now = new Date();
+    const ts = now.toLocaleTimeString();
+    const div = document.createElement('div');
+    div.className = `log-entry ${type}`;
+    div.innerHTML = `<span class="log-ts">${ts}</span><span class="log-icon">${icons[type] || 'ℹ️'}</span><span class="log-msg">${escHtml(message)}</span>`;
+    container.insertBefore(div, container.firstChild);
+  }
+
+  function clearLog() {
+    document.getElementById('logContainer').innerHTML = '';
+  }
+
+  // ── MODALS ──────────────────────────────────────────────────────────────────
+  function openModal(id) {
+    document.getElementById(id).classList.add('open');
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('open');
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === this) closeModal(this.id);
+    });
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    }
+  });
+
+  // ── TOASTS ──────────────────────────────────────────────────────────────────
+  function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const div = document.createElement('div');
+    div.className = `toast ${type}`;
+    div.textContent = message;
+    container.appendChild(div);
+    setTimeout(() => { div.remove(); }, 3000);
+  }
+
+  // ── UTILS ───────────────────────────────────────────────────────────────────
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  const AVATAR_COLORS = ['#7c5cbf','#5c8cbf','#bf5c7c','#5cbf8c','#bf8c5c','#8c5cbf','#5cbfbf','#bf5c5c'];
+
+  function avatarColor(name) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  }
+
+  // ── START ───────────────────────────────────────────────────────────────────
+  init();
+</script>
+</body>
+</html>
