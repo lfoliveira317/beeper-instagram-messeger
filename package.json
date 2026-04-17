@@ -1,11 +1,12 @@
 {
   "name": "beeper-instagram-messeger",
-  "version": "1.0.0",
-  "description": "Send Instagram DMs via Beeper API with a web UI",
+  "version": "2.0.0",
+  "description": "Send Instagram & Facebook DMs via Beeper API with a web UI",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "npm run kill && node server.js",
+    "dev": "npm run kill && node --watch server.js",
+    "kill": "node -e \"const {execSync}=require('child_process');try{const pid=execSync('lsof -ti :3600').toString().trim();if(pid){pid.split('\\n').forEach(p=>process.kill(Number(p),'SIGKILL'));console.log('Killed processes on port 3600')}}catch{}\" "
   },
   "dependencies": {
     "axios": "^1.6.0",
