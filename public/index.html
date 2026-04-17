@@ -480,6 +480,8 @@
     <div class="dot"></div>
     <span id="statusText">Checking...</span>
   </div>
+  <button class="btn" id="btnConnect" onclick="connectToBeeper()" style="display:none;padding:6px 14px;font-size:13px;">🔗 Connect to Beeper</button>
+  <button class="btn btn-danger" id="btnDisconnect" onclick="disconnectBeeper()" style="display:none;padding:6px 14px;font-size:13px;">Disconnect</button>
 </header>
 
 <!-- MAIN -->
@@ -501,6 +503,7 @@
       <button class="btn" onclick="openImportModal()">📥 Import JSON</button>
       <button class="btn" onclick="openBeeperModal()">🔄 Load from Beeper</button>
       <button class="btn" onclick="openAddModal()">➕ Add</button>
+      <button class="btn" onclick="openUsernameModal()">📨 By Username</button>
     </div>
     <div class="recipient-list" id="recipientList"></div>
   </div>
@@ -597,6 +600,26 @@
   </div>
 </div>
 
+<!-- MODAL: Send by Instagram Username -->
+<div class="modal-overlay" id="usernameModal">
+  <div class="modal">
+    <h3>📨 Send by Instagram Username</h3>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:4px;">Send directly to any Instagram user — Beeper will find or start the conversation automatically.</p>
+    <div class="form-group">
+      <label>Instagram Username *</label>
+      <input type="text" id="usernameInput" placeholder="e.g. johndoe (no @)" />
+    </div>
+    <div class="form-group">
+      <label>Message *</label>
+      <textarea id="usernameMessage" placeholder="Type your message..."></textarea>
+    </div>
+    <div class="modal-btns">
+      <button class="btn" onclick="closeModal('usernameModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="sendByUsername()">Send</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST CONTAINER -->
 <div id="toast-container"></div>
 
@@ -606,8 +629,20 @@
 
   // ── INIT ──────────────────────────────────────────────────────────────────
   async function init() {
+    // Handle OAuth redirect result
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('auth') === 'success') {
+      showToast('✅ Connected to Beeper!', 'success');
+      addLogEntry('success', 'OAuth authentication successful.');
+      history.replaceState({}, '', '/');
+    } else if (params.get('auth') === 'error') {
+      const msg = params.get('msg') || 'Unknown error';
+      showToast('❌ Auth failed: ' + msg, 'error');
+      addLogEntry('error', 'OAuth failed: ' + msg);
+      history.replaceState({}, '', '/');
+    }
     await fetchRecipients();
-    checkStatus();
+    await checkStatus();
     setInterval(checkStatus, 30000);
     addLogEntry('info', 'Application started.');
   }
@@ -619,17 +654,40 @@
       const data = await res.json();
       const badge = document.getElementById('statusBadge');
       const text = document.getElementById('statusText');
-      if (data.connected) {
+      const btnConnect = document.getElementById('btnConnect');
+      const btnDisconnect = document.getElementById('btnDisconnect');
+      if (data.authenticated && data.connected) {
         badge.classList.add('connected');
         text.textContent = 'Connected';
+        btnConnect.style.display = 'none';
+        btnDisconnect.style.display = '';
+      } else if (!data.authenticated) {
+        badge.classList.remove('connected');
+        text.textContent = 'Not authenticated';
+        btnConnect.style.display = '';
+        btnDisconnect.style.display = 'none';
       } else {
         badge.classList.remove('connected');
         text.textContent = 'Disconnected';
+        btnConnect.style.display = '';
+        btnDisconnect.style.display = 'none';
       }
     } catch {
       document.getElementById('statusBadge').classList.remove('connected');
-      document.getElementById('statusText').textContent = 'Disconnected';
+      document.getElementById('statusText').textContent = 'Offline';
     }
+  }
+
+  function connectToBeeper() {
+    window.location.href = '/oauth/start';
+  }
+
+  async function disconnectBeeper() {
+    if (!confirm('Disconnect from Beeper?')) return;
+    await fetch('/api/disconnect', { method: 'POST' });
+    await checkStatus();
+    addLogEntry('info', 'Disconnected from Beeper.');
+    showToast('Disconnected.', 'info');
   }
 
   // ── RECIPIENTS ─────────────────────────────────────────────────────────────
@@ -966,6 +1024,37 @@
     div.textContent = message;
     container.appendChild(div);
     setTimeout(() => { div.remove(); }, 3000);
+  }
+
+  function openUsernameModal() {
+    document.getElementById('usernameInput').value = '';
+    document.getElementById('usernameMessage').value = '';
+    openModal('usernameModal');
+  }
+
+  async function sendByUsername() {
+    const username = document.getElementById('usernameInput').value.trim().replace(/^@/, '');
+    const message = document.getElementById('usernameMessage').value.trim();
+    if (!username || !message) { showToast('Username and message are required.', 'error'); return; }
+    try {
+      addLogEntry('info', `Sending to @${username}...`);
+      const res = await fetch('/api/send-to-username', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, message }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        closeModal('usernameModal');
+        addLogEntry('success', `✅ Sent to @${username}`);
+        showToast(`Sent to @${username}`, 'success');
+      } else {
+        addLogEntry('error', `❌ Failed to send to @${username}: ${data.error}`);
+        showToast(data.error || 'Send failed.', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   }
 
   // ── UTILS ───────────────────────────────────────────────────────────────────

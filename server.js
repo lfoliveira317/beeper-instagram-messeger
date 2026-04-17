@@ -3,21 +3,54 @@ const express = require('express');
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3600;
 const BEEPER_URL = process.env.BEEPER_URL || 'http://localhost:23373';
-const BEEPER_ACCESS_TOKEN = process.env.BEEPER_ACCESS_TOKEN || '';
 const RECIPIENTS_FILE = path.join(__dirname, 'recipients.json');
+const AUTH_FILE = path.join(__dirname, '.beeper-auth.json');
+const REDIRECT_URI = `http://localhost:${PORT}/oauth/callback`;
 
-const beeper = axios.create({
-  baseURL: BEEPER_URL,
-  headers: {
-    Authorization: `Bearer ${BEEPER_ACCESS_TOKEN}`,
-    'Content-Type': 'application/json',
-  },
-  timeout: 10000,
-});
+// ── Auth state (persisted across restarts) ──────────────────────────────────
+let accessToken = null;
+let clientId = null;
+const pendingPKCE = new Map(); // state → code_verifier
+
+async function loadAuth() {
+  try {
+    const data = JSON.parse(await fs.readFile(AUTH_FILE, 'utf8'));
+    accessToken = data.accessToken || null;
+    clientId = data.clientId || null;
+  } catch { /* no saved auth yet */ }
+}
+
+async function saveAuth() {
+  await fs.writeFile(AUTH_FILE, JSON.stringify({ accessToken, clientId }, null, 2), 'utf8');
+}
+
+async function ensureClientId() {
+  if (clientId) return clientId;
+  const r = await axios.post(`${BEEPER_URL}/oauth/register`, {
+    client_name: 'beeper-instagram-messeger',
+    redirect_uris: [REDIRECT_URI],
+    grant_types: ['authorization_code'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'none',
+  });
+  clientId = r.data.client_id;
+  await saveAuth();
+  return clientId;
+}
+
+function getBeeperClient() {
+  if (!accessToken) throw new Error('Not authenticated. Connect to Beeper first via the UI.');
+  return axios.create({
+    baseURL: BEEPER_URL,
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    timeout: 15000,
+  });
+}
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -29,6 +62,66 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── OAuth2 PKCE endpoints ────────────────────────────────────────────────────
+
+// GET /oauth/start — kick off the PKCE authorization flow
+app.get('/oauth/start', async (req, res) => {
+  try {
+    const cid = await ensureClientId();
+    const verifier = crypto.randomBytes(32).toString('base64url');
+    const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+    const state = crypto.randomBytes(16).toString('hex');
+    pendingPKCE.set(state, verifier);
+
+    const url = new URL(`${BEEPER_URL}/oauth/authorize`);
+    url.searchParams.set('client_id', cid);
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('code_challenge', challenge);
+    url.searchParams.set('code_challenge_method', 'S256');
+    url.searchParams.set('redirect_uri', REDIRECT_URI);
+    url.searchParams.set('scope', 'read write');
+    url.searchParams.set('state', state);
+    res.redirect(url.toString());
+  } catch (err) {
+    res.redirect(`/?auth=error&msg=${encodeURIComponent(err.message)}`);
+  }
+});
+
+// GET /oauth/callback — exchange authorization code for access token
+app.get('/oauth/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+  if (error) return res.redirect(`/?auth=error&msg=${encodeURIComponent(error)}`);
+
+  const verifier = pendingPKCE.get(state);
+  if (!verifier) return res.redirect('/?auth=error&msg=invalid_state');
+  pendingPKCE.delete(state);
+
+  try {
+    const r = await axios.post(`${BEEPER_URL}/oauth/token`, new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      code_verifier: verifier,
+      redirect_uri: REDIRECT_URI,
+      client_id: clientId,
+    }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    accessToken = r.data.access_token;
+    await saveAuth();
+    res.redirect('/?auth=success');
+  } catch (err) {
+    const msg = err.response?.data?.error_description || err.message;
+    res.redirect(`/?auth=error&msg=${encodeURIComponent(msg)}`);
+  }
+});
+
+// POST /api/disconnect — clear stored token
+app.post('/api/disconnect', async (req, res) => {
+  accessToken = null;
+  await saveAuth();
+  res.json({ success: true });
+});
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function readRecipients() {
   try {
@@ -43,69 +136,102 @@ async function writeRecipients(recipients) {
   await fs.writeFile(RECIPIENTS_FILE, JSON.stringify(recipients, null, 2), 'utf8');
 }
 
+// ── API routes ───────────────────────────────────────────────────────────────
+
 // GET /api/status
 app.get('/api/status', async (req, res) => {
+  if (!accessToken) {
+    return res.json({ authenticated: false, connected: false });
+  }
   try {
-    let info;
-    try {
-      const r = await beeper.get('/v1/whoami');
-      info = r.data;
-    } catch (err) {
-      if (err.response && err.response.status === 404) {
-        const r2 = await beeper.get('/v1/chats?limit=1');
-        info = r2.data;
-      } else {
-        throw err;
-      }
-    }
-    res.json({ connected: true, info });
+    const beeper = getBeeperClient();
+    const r = await beeper.get('/v1/accounts');
+    res.json({ authenticated: true, connected: true, accounts: r.data });
   } catch (err) {
-    res.json({ connected: false, info: null, error: err.message });
+    if (err.response?.status === 401) {
+      accessToken = null;
+      await saveAuth();
+      return res.json({ authenticated: false, connected: false, error: 'Token expired' });
+    }
+    res.json({ authenticated: true, connected: false, error: err.message });
   }
 });
 
-// GET /api/chats
+// POST /api/send-to-username — start/find a chat with an Instagram user and send a message
+app.post('/api/send-to-username', async (req, res) => {
+  const { username, message } = req.body;
+  if (!username || !message) {
+    return res.status(400).json({ success: false, error: 'username and message are required' });
+  }
+  try {
+    const beeper = getBeeperClient();
+    // Get the instagramgo account ID
+    const accountsRes = await beeper.get('/v1/accounts');
+    const igAccount = accountsRes.data.find(a => a.accountID?.toLowerCase().includes('instagram'));
+    if (!igAccount) {
+      return res.status(400).json({ success: false, error: 'No Instagram account connected in Beeper' });
+    }
+    // Find or create a chat with this username
+    const chatRes = await beeper.post('/v1/chats', {
+      accountID: igAccount.accountID,
+      mode: 'start',
+      user: { username },
+    });
+    const chatId = chatRes.data.chatID;
+    // Send the message
+    const msgRes = await beeper.post(`/v1/chats/${encodeURIComponent(chatId)}/messages`, { text: message });
+    res.json({ success: true, chatId, result: msgRes.data });
+  } catch (err) {
+    const status = err.response?.status ?? 500;
+    res.status(status).json({ success: false, error: err.response?.data?.message || err.message });
+  }
+});
+
+// GET /api/chats — list Instagram chats from Beeper
 app.get('/api/chats', async (req, res) => {
   try {
-    const r = await beeper.get('/v1/chats?limit=100');
-    const chats = Array.isArray(r.data) ? r.data : (r.data.chats || []);
-    const instagram = chats
-      .filter(c => c.accountId === 'instagramgo')
+    const beeper = getBeeperClient();
+    const r = await beeper.get('/v1/chats', { params: { limit: 100 } });
+    const items = r.data?.items ?? (Array.isArray(r.data) ? r.data : []);
+    const instagram = items
+      .filter(c => c.accountID?.toLowerCase().includes('instagram'))
       .map(c => ({
         chatId: c.id,
-        name: c.name || c.id,
-        accountId: c.accountId,
-        username: c.name || c.id,
+        name: c.title || c.id,
+        accountId: c.accountID,
+        username: c.participants?.items?.find(p => !p.isSelf)?.username || c.title || '',
       }));
     res.json(instagram);
   } catch (err) {
-    const status = err.response ? err.response.status : 500;
+    const status = err.response?.status ?? 500;
     res.status(status).json({ success: false, error: err.message });
   }
 });
 
-// POST /api/send
+// POST /api/send — send message to a single chat
 app.post('/api/send', async (req, res) => {
   const { chatId, message } = req.body;
   if (!chatId || !message) {
     return res.status(400).json({ success: false, error: 'chatId and message are required' });
   }
   try {
+    const beeper = getBeeperClient();
     const r = await beeper.post(`/v1/chats/${encodeURIComponent(chatId)}/messages`, { text: message });
     res.json({ success: true, result: r.data });
   } catch (err) {
-    const status = err.response ? err.response.status : 500;
+    const status = err.response?.status ?? 500;
     res.status(status).json({ success: false, error: err.message });
   }
 });
 
-// POST /api/broadcast
+// POST /api/broadcast — send same message to multiple recipients
 app.post('/api/broadcast', async (req, res) => {
   const { message, ids, delay: delayMs = 2000 } = req.body;
   if (!message) {
     return res.status(400).json({ success: false, error: 'message is required' });
   }
   try {
+    const beeper = getBeeperClient();
     let recipients = await readRecipients();
     if (ids && Array.isArray(ids) && ids.length > 0) {
       recipients = recipients.filter(r => ids.includes(r.id));
@@ -132,8 +258,7 @@ app.post('/api/broadcast', async (req, res) => {
 // GET /api/recipients
 app.get('/api/recipients', async (req, res) => {
   try {
-    const recipients = await readRecipients();
-    res.json(recipients);
+    res.json(await readRecipients());
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -165,14 +290,14 @@ app.post('/api/recipients/import', async (req, res) => {
   }
   try {
     const recipients = await readRecipients();
-    const existingChatIds = new Set(recipients.map(r => r.chatId));
+    const existingIds = new Set(recipients.map(r => r.chatId));
     let maxId = recipients.reduce((m, r) => Math.max(m, r.id || 0), 0);
     let added = 0;
     for (const item of incoming) {
-      if (!item.chatId || existingChatIds.has(item.chatId)) continue;
+      if (!item.chatId || existingIds.has(item.chatId)) continue;
       maxId++;
       recipients.push({ id: maxId, name: item.name || item.chatId, chatId: item.chatId, username: item.username || '', note: item.note || '' });
-      existingChatIds.add(item.chatId);
+      existingIds.add(item.chatId);
       added++;
     }
     await writeRecipients(recipients);
@@ -212,6 +337,20 @@ app.delete('/api/recipients/:id', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Beeper Instagram Messenger running at http://localhost:${PORT}`);
+// ── Start ────────────────────────────────────────────────────────────────────
+loadAuth().then(() => {
+  app.listen(PORT, () => {
+    console.log('');
+    console.log('╔══════════════════════════════════════════════╗');
+    console.log('║  📸  Beeper Instagram Messenger  v1.0.0      ║');
+    console.log('╠══════════════════════════════════════════════╣');
+    console.log(`║  UI: http://localhost:${PORT}                  ║`);
+    console.log('╠══════════════════════════════════════════════╣');
+    console.log('║  Auth handled automatically via OAuth2 PKCE  ║');
+    console.log('║  No BEEPER_ACCESS_TOKEN needed!              ║');
+    console.log('╚══════════════════════════════════════════════╝');
+    console.log('');
+    console.log(accessToken ? '✅ Authenticated (token loaded from file)' : '⚠️  Not authenticated — open the UI and click Connect');
+    console.log('');
+  });
 });
