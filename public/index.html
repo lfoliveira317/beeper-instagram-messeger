@@ -1034,7 +1034,8 @@
   }
 
   async function broadcastAll() {
-    if (allRecipients.length === 0) { showToast('No recipients available.', 'error'); return; }
+    const networkCount = allRecipients.filter(r => (r.network || 'instagram') === currentNetwork).length;
+    if (networkCount === 0) { showToast('No recipients in this network.', 'error'); return; }
     await runBroadcast(null);
   }
 
@@ -1042,7 +1043,8 @@
     const message = document.getElementById('messageInput').value.trim();
     if (!message) { showToast('Type a message first.', 'error'); return; }
     const delay = parseInt(document.getElementById('delaySlider').value, 10) * 1000;
-    const targetCount = ids ? ids.length : allRecipients.length;
+    const networkCount = allRecipients.filter(r => (r.network || 'instagram') === currentNetwork).length;
+    const targetCount = ids ? ids.length : networkCount;
     addLogEntry('info', `Broadcasting to ${targetCount} recipient(s) with ${delay/1000}s delay...`);
 
     document.getElementById('btnBroadcast').disabled = true;
@@ -1051,27 +1053,56 @@
     try {
       const body = { message, delay };
       if (ids) body.ids = ids;
+      else body.network = currentNetwork;
+
       const res = await fetch('/api/broadcast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (data.results) {
-        data.results.forEach(r => {
-          if (r.success) {
-            addLogEntry('success', `✅ Sent to ${r.name} (${r.chatId.slice(0, 20)}...)`);
-          } else {
-            addLogEntry('error', `❌ Failed to ${r.name}: ${r.error}`);
+
+      if (!res.ok && !res.headers.get('content-type')?.includes('text/event-stream')) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || 'Broadcast failed');
+      }
+
+      // Stream SSE events
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let sent = 0, failed = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop();
+
+        for (const block of lines) {
+          const eventMatch = block.match(/^event: (\w+)/m);
+          const dataMatch = block.match(/^data: (.+)/m);
+          if (!eventMatch || !dataMatch) continue;
+          const evt = eventMatch[1];
+          const data = JSON.parse(dataMatch[1]);
+
+          if (evt === 'result') {
+            if (data.success) {
+              sent++;
+              const chatShort = data.chatId ? data.chatId.slice(0, 20) + '...' : 'N/A';
+              addLogEntry('success', `✅ Sent to ${data.name} (${chatShort})`);
+            } else {
+              failed++;
+              addLogEntry('error', `❌ Failed: ${data.name} — ${data.error}`);
+            }
+          } else if (evt === 'done') {
+            showToast(`Broadcast done: ${data.sent} sent, ${data.failed} failed.`, data.sent > 0 ? 'success' : 'error');
+            addLogEntry('info', `Broadcast complete: ${data.sent}/${data.total} sent.`);
+          } else if (evt === 'error') {
+            addLogEntry('error', 'Broadcast error: ' + data.error);
+            showToast(data.error, 'error');
           }
-        });
-        const ok = data.results.filter(r => r.success).length;
-        const fail = data.results.length - ok;
-        showToast(`Broadcast done: ${ok} sent, ${fail} failed.`, ok > 0 ? 'success' : 'error');
-        addLogEntry('info', `Broadcast complete: ${ok}/${data.results.length} sent.`);
-      } else {
-        addLogEntry('error', 'Broadcast failed: ' + (data.error || 'Unknown error'));
-        showToast(data.error || 'Broadcast failed.', 'error');
+        }
       }
     } catch (err) {
       addLogEntry('error', 'Broadcast error: ' + err.message);

@@ -149,13 +149,14 @@ function extractFacebookUsername(url) {
 }
 
 // Resolve chatId for a recipient (if missing, start chat via username) and persist it
-async function resolveRecipientChat(beeper, recipient, allRecipients) {
+// accountsCache: pre-fetched accounts array to avoid repeated /v1/accounts calls
+async function resolveRecipientChat(beeper, recipient, allRecipients, accountsCache) {
   if (recipient.chatId) return recipient.chatId;
   if (!recipient.username) throw new Error(`Recipient "${recipient.name}" has no chatId or username`);
 
   const network = recipient.network || 'facebook';
-  const accountsRes = await beeper.get('/v1/accounts');
-  const account = accountsRes.data.find(a => a.accountID?.toLowerCase().includes(network.toLowerCase()));
+  const accounts = accountsCache || (await beeper.get('/v1/accounts')).data;
+  const account = accounts.find(a => a.accountID?.toLowerCase().includes(network.toLowerCase()));
   if (!account) throw new Error(`No ${network} account connected in Beeper`);
 
   const chatRes = await beeper.post('/v1/chats', {
@@ -261,37 +262,70 @@ app.post('/api/send', async (req, res) => {
   }
 });
 
-// POST /api/broadcast — send same message to multiple recipients
+// GET /api/broadcast — SSE stream for broadcast progress
+app.get('/api/broadcast', (req, res) => {
+  res.status(405).json({ success: false, error: 'Use POST /api/broadcast to start a broadcast' });
+});
+
+// POST /api/broadcast — send same message to multiple recipients (streams SSE progress)
 app.post('/api/broadcast', async (req, res) => {
-  const { message, ids, delay: delayMs = 2000 } = req.body;
+  const { message, ids, network, delay: delayMs = 2000 } = req.body;
   if (!message) {
     return res.status(400).json({ success: false, error: 'message is required' });
   }
+
+  // Use SSE to stream progress to the client
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+
   try {
     const beeper = getBeeperClient();
-    let recipients = await readRecipients();
+    let all = await readRecipients();
+    let recipients = all;
+
+    // Filter by explicit ids list
     if (ids && Array.isArray(ids) && ids.length > 0) {
       recipients = recipients.filter(r => ids.includes(r.id));
+    } else if (network) {
+      // Filter by network when sending to all
+      recipients = recipients.filter(r => (r.network || 'instagram') === network);
     }
-    const all = await readRecipients(); // full list for persisting resolved chatIds
+
+    send('start', { total: recipients.length });
+
+    // Fetch accounts once — reused for every recipient that needs chatId resolution
+    const accountsRes = await beeper.get('/v1/accounts');
+    const accounts = accountsRes.data;
+
     const results = [];
     for (let i = 0; i < recipients.length; i++) {
       const recipient = recipients[i];
       try {
-        const chatId = await resolveRecipientChat(beeper, recipient, all);
-        const r = await beeper.post(`/v1/chats/${encodeURIComponent(chatId)}/messages`, { text: message });
-        results.push({ id: recipient.id, name: recipient.name, chatId, success: true, result: r.data });
+        const chatId = await resolveRecipientChat(beeper, recipient, all, accounts);
+        await beeper.post(`/v1/chats/${encodeURIComponent(chatId)}/messages`, { text: message });
+        const result = { id: recipient.id, name: recipient.name, chatId, success: true };
+        results.push(result);
+        send('result', result);
       } catch (err) {
-        results.push({ id: recipient.id, name: recipient.name, chatId: recipient.chatId || '', success: false, error: err.message });
+        const result = { id: recipient.id, name: recipient.name, chatId: recipient.chatId || '', success: false, error: err.message };
+        results.push(result);
+        send('result', result);
       }
       if (i < recipients.length - 1) {
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
     }
-    res.json({ success: true, results });
+
+    const ok = results.filter(r => r.success).length;
+    send('done', { success: true, total: recipients.length, sent: ok, failed: recipients.length - ok });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    send('error', { success: false, error: err.message });
   }
+
+  res.end();
 });
 
 // GET /api/recipients
