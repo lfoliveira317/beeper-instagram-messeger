@@ -335,7 +335,27 @@ app.post('/api/recipients/import', async (req, res) => {
     let added = 0;
 
     for (const item of incoming) {
-      // ── Detect copilot-find-new-clients format (has 'facebook' URL field) ──
+      // ── Detect copilot-find-new-clients Instagram format (has instagramUrl or username+no chatId/facebook) ──
+      if (item.instagramUrl || (item.username && !item.chatId && !item.facebook)) {
+        const username = item.username || extractFacebookUsername(item.instagramUrl);
+        if (!username) continue;
+        const key = `instagram:${username}`;
+        if (existingUsernames.has(key)) continue;
+        maxId++;
+        recipients.push({
+          id: maxId,
+          name: item.name || username,
+          chatId: '',
+          username,
+          network: 'instagram',
+          note: [item.bio ? item.bio.slice(0, 80) : '', item.city, item.email].filter(Boolean).join(' | '),
+        });
+        existingUsernames.add(key);
+        added++;
+        continue;
+      }
+
+      // ── Detect copilot-find-new-clients Facebook format (has 'facebook' URL field) ──
       if (item.facebook && !item.chatId) {
         const username = extractFacebookUsername(item.facebook);
         if (!username) continue;

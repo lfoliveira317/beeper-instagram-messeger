@@ -605,9 +605,11 @@
   <div class="modal">
     <h3>📥 Import Recipients (JSON)</h3>
     <p style="color:var(--text2);font-size:12px;line-height:1.6;margin-bottom:4px;">
-      Supports two formats:<br>
+      Supports three formats:<br>
       <b style="color:var(--text)">① Standard</b> — <code>[{"name":"...","chatId":"...","network":"instagram"}]</code><br>
-      <b style="color:var(--text)">② copilot-find-new-clients export</b> — auto-detects from <code>facebook</code> URL field. Chat is resolved automatically on first send.
+      <b style="color:var(--text)">② copilot Instagram export</b> — auto-detects from <code>instagramUrl</code> / <code>username</code> field.<br>
+      <b style="color:var(--text)">③ copilot Facebook export</b> — auto-detects from <code>facebook</code> URL field.<br>
+      Chat is resolved automatically on first send.
     </p>
     <div class="form-group">
       <label>Upload JSON file</label>
