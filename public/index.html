@@ -519,17 +519,19 @@
       <span class="count-badge" id="recipientCount">0</span>
     </div>
     <div class="toolbar">
-      <label>
-        <input type="checkbox" id="selectAllCb" />
-        All
-      </label>
-      <input type="text" class="search-input" id="searchInput" placeholder="Search..." />
+      <input type="text" class="search-input" id="searchInput" placeholder="🔍 Search..." />
     </div>
     <div class="btn-row">
-      <button class="btn" onclick="openImportModal()">📥 Import JSON</button>
-      <button class="btn" onclick="openBeeperModal()">🔄 Load from Beeper</button>
+      <button class="btn" onclick="openImportModal()">📥 Import</button>
+      <button class="btn" onclick="openBeeperModal()">🔄 Beeper</button>
       <button class="btn" onclick="openAddModal()">➕ Add</button>
-      <button class="btn" onclick="openUsernameModal()">📨 By Username</button>
+      <button class="btn" onclick="openUsernameModal()">📨 Username</button>
+    </div>
+    <div class="btn-row" style="border-top:none;padding-top:0;">
+      <button class="btn" onclick="selectAll()">☑ Select All</button>
+      <button class="btn" onclick="deselectAll()">☐ Deselect</button>
+      <button class="btn btn-danger" id="btnRemoveSelected" onclick="removeSelected()" disabled>🗑 Selected</button>
+      <button class="btn btn-danger" onclick="removeAllNetwork()">🗑 All</button>
     </div>
     <div class="recipient-list" id="recipientList"></div>
   </div>
@@ -795,13 +797,12 @@
   }
 
   function onCheckChange() {
-    const allCbs = document.querySelectorAll('.recipient-cb');
-    const checkedCbs = document.querySelectorAll('.recipient-cb:checked');
-    document.getElementById('selectAllCb').checked = allCbs.length > 0 && checkedCbs.length === allCbs.length;
     document.querySelectorAll('.recipient-item').forEach(item => {
       const cb = item.querySelector('.recipient-cb');
       item.classList.toggle('selected', cb && cb.checked);
     });
+    const selected = getSelectedIds().length;
+    document.getElementById('btnRemoveSelected').disabled = selected === 0;
     updateSelectedInfo();
   }
 
@@ -825,10 +826,54 @@
     updateSelectedInfo();
   }
 
-  document.getElementById('selectAllCb').addEventListener('change', function() {
-    document.querySelectorAll('.recipient-cb').forEach(cb => { cb.checked = this.checked; });
+  function selectAll() {
+    document.querySelectorAll('.recipient-cb').forEach(cb => { cb.checked = true; });
     onCheckChange();
-  });
+  }
+
+  function deselectAll() {
+    document.querySelectorAll('.recipient-cb').forEach(cb => { cb.checked = false; });
+    onCheckChange();
+  }
+
+  async function removeSelected() {
+    const ids = getSelectedIds();
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} selected recipient(s)?`)) return;
+    try {
+      const res = await fetch('/api/recipients', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json();
+      await fetchRecipients();
+      addLogEntry('info', `Removed ${data.removed} recipient(s).`);
+      showToast(`Removed ${data.removed} recipient(s).`, 'info');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  async function removeAllNetwork() {
+    const networkFiltered = allRecipients.filter(r => (r.network || 'instagram') === currentNetwork);
+    if (networkFiltered.length === 0) { showToast('No recipients to remove.', 'info'); return; }
+    const label = NETWORK_LABELS[currentNetwork] || currentNetwork;
+    if (!confirm(`Remove ALL ${networkFiltered.length} ${label} recipients?`)) return;
+    try {
+      const res = await fetch('/api/recipients', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ network: currentNetwork }),
+      });
+      const data = await res.json();
+      await fetchRecipients();
+      addLogEntry('info', `Removed all ${label} recipients (${data.removed} total).`);
+      showToast(`Removed ${data.removed} ${label} recipients.`, 'info');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
 
   document.getElementById('searchInput').addEventListener('input', function() {
     renderRecipients(this.value);

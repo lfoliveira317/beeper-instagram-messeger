@@ -427,6 +427,28 @@ app.delete('/api/recipients/:id', async (req, res) => {
   }
 });
 
+// DELETE /api/recipients — bulk delete by ids or network
+// Body: { ids: [1,2,3] }  OR  { network: 'instagram' }  OR {} to delete all
+app.delete('/api/recipients', async (req, res) => {
+  const { ids, network } = req.body;
+  try {
+    let recipients = await readRecipients();
+    const before = recipients.length;
+    if (Array.isArray(ids) && ids.length > 0) {
+      const idSet = new Set(ids);
+      recipients = recipients.filter(r => !idSet.has(r.id));
+    } else if (network) {
+      recipients = recipients.filter(r => (r.network || 'instagram') !== network);
+    } else {
+      recipients = [];
+    }
+    await writeRecipients(recipients);
+    res.json({ success: true, removed: before - recipients.length, total: recipients.length });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ── Start ────────────────────────────────────────────────────────────────────
 loadAuth().then(() => {
   app.listen(PORT, () => {
