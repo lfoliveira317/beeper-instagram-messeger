@@ -157,28 +157,25 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
-// POST /api/send-to-username — start/find a chat with an Instagram user and send a message
+// POST /api/send-to-username — start/find a chat with a user on a given network and send a message
 app.post('/api/send-to-username', async (req, res) => {
-  const { username, message } = req.body;
+  const { username, message, network = 'instagram' } = req.body;
   if (!username || !message) {
     return res.status(400).json({ success: false, error: 'username and message are required' });
   }
   try {
     const beeper = getBeeperClient();
-    // Get the instagramgo account ID
     const accountsRes = await beeper.get('/v1/accounts');
-    const igAccount = accountsRes.data.find(a => a.accountID?.toLowerCase().includes('instagram'));
-    if (!igAccount) {
-      return res.status(400).json({ success: false, error: 'No Instagram account connected in Beeper' });
+    const account = accountsRes.data.find(a => a.accountID?.toLowerCase().includes(network.toLowerCase()));
+    if (!account) {
+      return res.status(400).json({ success: false, error: `No ${network} account connected in Beeper` });
     }
-    // Find or create a chat with this username
     const chatRes = await beeper.post('/v1/chats', {
-      accountID: igAccount.accountID,
+      accountID: account.accountID,
       mode: 'start',
       user: { username },
     });
     const chatId = chatRes.data.chatID;
-    // Send the message
     const msgRes = await beeper.post(`/v1/chats/${encodeURIComponent(chatId)}/messages`, { text: message });
     res.json({ success: true, chatId, result: msgRes.data });
   } catch (err) {
@@ -187,21 +184,23 @@ app.post('/api/send-to-username', async (req, res) => {
   }
 });
 
-// GET /api/chats — list Instagram chats from Beeper
+// GET /api/chats — list chats from Beeper filtered by network (instagram|facebook)
 app.get('/api/chats', async (req, res) => {
+  const network = (req.query.network || 'instagram').toLowerCase();
   try {
     const beeper = getBeeperClient();
     const r = await beeper.get('/v1/chats', { params: { limit: 100 } });
     const items = r.data?.items ?? (Array.isArray(r.data) ? r.data : []);
-    const instagram = items
-      .filter(c => c.accountID?.toLowerCase().includes('instagram'))
+    const chats = items
+      .filter(c => c.accountID?.toLowerCase().includes(network))
       .map(c => ({
         chatId: c.id,
         name: c.title || c.id,
         accountId: c.accountID,
+        network,
         username: c.participants?.items?.find(p => !p.isSelf)?.username || c.title || '',
       }));
-    res.json(instagram);
+    res.json(chats);
   } catch (err) {
     const status = err.response?.status ?? 500;
     res.status(status).json({ success: false, error: err.message });
@@ -266,14 +265,14 @@ app.get('/api/recipients', async (req, res) => {
 
 // POST /api/recipients
 app.post('/api/recipients', async (req, res) => {
-  const { name, chatId, username, note } = req.body;
+  const { name, chatId, username, note, network = 'instagram' } = req.body;
   if (!name || !chatId) {
     return res.status(400).json({ success: false, error: 'name and chatId are required' });
   }
   try {
     const recipients = await readRecipients();
     const maxId = recipients.reduce((m, r) => Math.max(m, r.id || 0), 0);
-    const newRecipient = { id: maxId + 1, name, chatId, username: username || '', note: note || '' };
+    const newRecipient = { id: maxId + 1, name, chatId, username: username || '', note: note || '', network };
     recipients.push(newRecipient);
     await writeRecipients(recipients);
     res.status(201).json(newRecipient);
@@ -296,7 +295,7 @@ app.post('/api/recipients/import', async (req, res) => {
     for (const item of incoming) {
       if (!item.chatId || existingIds.has(item.chatId)) continue;
       maxId++;
-      recipients.push({ id: maxId, name: item.name || item.chatId, chatId: item.chatId, username: item.username || '', note: item.note || '' });
+      recipients.push({ id: maxId, name: item.name || item.chatId, chatId: item.chatId, username: item.username || '', note: item.note || '', network: item.network || 'instagram' });
       existingIds.add(item.chatId);
       added++;
     }
@@ -342,10 +341,11 @@ loadAuth().then(() => {
   app.listen(PORT, () => {
     console.log('');
     console.log('╔══════════════════════════════════════════════╗');
-    console.log('║  📸  Beeper Instagram Messenger  v1.0.0      ║');
+    console.log('║   💬  Beeper Messenger  v2.0.0               ║');
     console.log('╠══════════════════════════════════════════════╣');
     console.log(`║  UI: http://localhost:${PORT}                  ║`);
     console.log('╠══════════════════════════════════════════════╣');
+    console.log('║  Networks: Instagram + Facebook Messenger    ║');
     console.log('║  Auth handled automatically via OAuth2 PKCE  ║');
     console.log('║  No BEEPER_ACCESS_TOKEN needed!              ║');
     console.log('╚══════════════════════════════════════════════╝');

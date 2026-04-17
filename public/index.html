@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Beeper Instagram Messenger</title>
+  <title>Beeper Messenger</title>
   <style>
     :root {
       --bg: #0f0f13;
@@ -458,6 +458,28 @@
 
     input[type="checkbox"] { cursor: pointer; }
 
+    /* NETWORK TABS */
+    .network-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .network-tab {
+      flex: 1;
+      padding: 10px 0;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text2);
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+
+    .network-tab:hover { color: var(--text); background: var(--surface2); }
+    .network-tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+
     .empty-state {
       text-align: center;
       color: var(--text2);
@@ -473,8 +495,8 @@
 <!-- HEADER -->
 <header>
   <div class="header-left">
-    <span class="icon">📸</span>
-    <span>Beeper Instagram Messenger</span>
+    <span class="icon">💬</span>
+    <span>Beeper Messenger</span>
   </div>
   <div class="status-badge" id="statusBadge">
     <div class="dot"></div>
@@ -488,6 +510,10 @@
 <div class="main">
   <!-- LEFT: Recipients -->
   <div class="left-panel">
+    <div class="network-tabs">
+      <div class="network-tab active" id="tab-instagram" onclick="switchNetwork('instagram')">📸 Instagram</div>
+      <div class="network-tab" id="tab-facebook" onclick="switchNetwork('facebook')">💬 Facebook</div>
+    </div>
     <div class="panel-header">
       Recipients
       <span class="count-badge" id="recipientCount">0</span>
@@ -545,6 +571,13 @@
   <div class="modal">
     <h3>➕ Add Recipient</h3>
     <div class="form-group">
+      <label>Network *</label>
+      <select id="addNetwork">
+        <option value="instagram">📸 Instagram</option>
+        <option value="facebook">💬 Facebook</option>
+      </select>
+    </div>
+    <div class="form-group">
       <label>Name *</label>
       <input type="text" id="addName" placeholder="e.g. John Doe" />
     </div>
@@ -554,7 +587,7 @@
     </div>
     <div class="form-group">
       <label>Username</label>
-      <input type="text" id="addUsername" placeholder="Instagram username" />
+      <input type="text" id="addUsername" placeholder="Username" />
     </div>
     <div class="form-group">
       <label>Note</label>
@@ -589,7 +622,7 @@
 <!-- MODAL: Load from Beeper -->
 <div class="modal-overlay" id="beeperModal">
   <div class="modal" style="width:520px;">
-    <h3>🔄 Load from Beeper Instagram</h3>
+    <h3 id="beeperModalTitle">🔄 Load from Beeper</h3>
     <div id="beeperModalContent">
       <p style="color:var(--text2);font-size:13px;">Fetching your Instagram chats from Beeper...</p>
     </div>
@@ -600,13 +633,13 @@
   </div>
 </div>
 
-<!-- MODAL: Send by Instagram Username -->
+<!-- MODAL: Send by Username -->
 <div class="modal-overlay" id="usernameModal">
   <div class="modal">
-    <h3>📨 Send by Instagram Username</h3>
-    <p style="color:var(--text2);font-size:13px;margin-bottom:4px;">Send directly to any Instagram user — Beeper will find or start the conversation automatically.</p>
+    <h3 id="usernameModalTitle">📨 Send by Username</h3>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:4px;">Beeper will find or start the conversation automatically.</p>
     <div class="form-group">
-      <label>Instagram Username *</label>
+      <label id="usernameModalLabel">Username *</label>
       <input type="text" id="usernameInput" placeholder="e.g. johndoe (no @)" />
     </div>
     <div class="form-group">
@@ -626,6 +659,16 @@
 <script>
   let allRecipients = [];
   let beeperChats = [];
+  let currentNetwork = 'instagram';
+
+  const NETWORK_LABELS = { instagram: '📸 Instagram', facebook: '💬 Facebook' };
+
+  function switchNetwork(network) {
+    currentNetwork = network;
+    document.querySelectorAll('.network-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(`tab-${network}`).classList.add('active');
+    renderRecipients();
+  }
 
   // ── INIT ──────────────────────────────────────────────────────────────────
   async function init() {
@@ -708,15 +751,16 @@
   function renderRecipients(filter) {
     const search = (filter ?? document.getElementById('searchInput').value).toLowerCase();
     const list = document.getElementById('recipientList');
-    const filtered = allRecipients.filter(r =>
+    const networkFiltered = allRecipients.filter(r => (r.network || 'instagram') === currentNetwork);
+    const filtered = networkFiltered.filter(r =>
       r.name.toLowerCase().includes(search) ||
       (r.username || '').toLowerCase().includes(search)
     );
 
-    document.getElementById('recipientCount').textContent = allRecipients.length;
+    document.getElementById('recipientCount').textContent = networkFiltered.length;
 
     if (filtered.length === 0) {
-      list.innerHTML = `<div class="empty-state"><div class="emoji">📭</div>${allRecipients.length === 0 ? 'No recipients yet. Add one!' : 'No results.'}</div>`;
+      list.innerHTML = `<div class="empty-state"><div class="emoji">${currentNetwork === 'instagram' ? '📸' : '💬'}</div>${networkFiltered.length === 0 ? `No ${currentNetwork} recipients yet.` : 'No results.'}</div>`;
       updateSelectedInfo();
       return;
     }
@@ -727,11 +771,12 @@
       const initials = r.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
       const color = avatarColor(r.name);
       const isChecked = selectedIds.includes(r.id);
+      const netIcon = r.network === 'facebook' ? '💬' : '📸';
       return `<div class="recipient-item ${isChecked ? 'selected' : ''}" id="item-${r.id}">
         <input type="checkbox" class="recipient-cb" data-id="${r.id}" ${isChecked ? 'checked' : ''} onchange="onCheckChange()" />
         <div class="avatar" style="background:${color}">${initials}</div>
         <div class="recipient-info">
-          <div class="recipient-name">${escHtml(r.name)}</div>
+          <div class="recipient-name">${netIcon} ${escHtml(r.name)}</div>
           <div class="recipient-username">${r.username ? '@' + escHtml(r.username) : escHtml(r.chatId)}</div>
         </div>
         <button class="btn-delete-small" title="Delete" onclick="deleteRecipient(${r.id}, event)">🗑</button>
@@ -754,11 +799,11 @@
 
   function updateSelectedInfo() {
     const selected = getSelectedIds().length;
-    const total = allRecipients.length;
+    const total = allRecipients.filter(r => (r.network || 'instagram') === currentNetwork).length;
     const info = document.getElementById('selectedInfo');
     const msgVal = document.getElementById('messageInput').value.trim();
     if (selected === 0) {
-      info.textContent = `No recipients selected. ${total} available.`;
+      info.textContent = `No recipients selected. ${total} ${currentNetwork} recipients available.`;
     } else {
       info.textContent = `${selected} of ${total} recipients selected.`;
     }
@@ -798,10 +843,12 @@
   // ── ADD RECIPIENT MODAL ────────────────────────────────────────────────────
   function openAddModal() {
     ['addName','addChatId','addUsername','addNote'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('addNetwork').value = currentNetwork;
     openModal('addModal');
   }
 
   async function saveNewRecipient() {
+    const network = document.getElementById('addNetwork').value;
     const name = document.getElementById('addName').value.trim();
     const chatId = document.getElementById('addChatId').value.trim();
     const username = document.getElementById('addUsername').value.trim();
@@ -811,13 +858,13 @@
       const res = await fetch('/api/recipients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, chatId, username, note }),
+        body: JSON.stringify({ name, chatId, username, note, network }),
       });
       const data = await res.json();
       if (res.ok) {
         closeModal('addModal');
         await fetchRecipients();
-        addLogEntry('success', `Added recipient: ${name}`);
+        addLogEntry('success', `Added recipient: ${name} (${network})`);
         showToast(`Added ${name}`, 'success');
       } else {
         showToast(data.error || 'Failed to add.', 'error');
@@ -871,19 +918,21 @@
   // ── LOAD FROM BEEPER MODAL ─────────────────────────────────────────────────
   async function openBeeperModal() {
     beeperChats = [];
-    document.getElementById('beeperModalContent').innerHTML = '<p style="color:var(--text2);font-size:13px;">Fetching Instagram chats from Beeper...</p>';
+    const label = NETWORK_LABELS[currentNetwork] || currentNetwork;
+    document.getElementById('beeperModalTitle').textContent = `🔄 Load from Beeper — ${label}`;
+    document.getElementById('beeperModalContent').innerHTML = `<p style="color:var(--text2);font-size:13px;">Fetching ${label} chats from Beeper...</p>`;
     document.getElementById('beeperModalBtns').style.display = 'none';
     openModal('beeperModal');
     try {
-      const res = await fetch('/api/chats');
+      const res = await fetch(`/api/chats?network=${currentNetwork}`);
       beeperChats = await res.json();
       if (!Array.isArray(beeperChats) || beeperChats.length === 0) {
-        document.getElementById('beeperModalContent').innerHTML = '<p style="color:var(--warn);">No Instagram chats found. Make sure Beeper is running and the instagramgo account is connected.</p>';
+        document.getElementById('beeperModalContent').innerHTML = `<p style="color:var(--warn);">No ${label} chats found. Make sure Beeper is running and the account is connected.</p>`;
         return;
       }
       const existingIds = new Set(allRecipients.map(r => r.chatId));
       document.getElementById('beeperModalContent').innerHTML = `
-        <p style="color:var(--text2);font-size:13px;margin-bottom:10px;">Found ${beeperChats.length} Instagram chats. Select which to import:</p>
+        <p style="color:var(--text2);font-size:13px;margin-bottom:10px;">Found ${beeperChats.length} ${label} chats. Select which to import:</p>
         <div class="beeper-chat-list">
           ${beeperChats.map((c, i) => `
             <div class="beeper-chat-item">
@@ -906,7 +955,7 @@
     if (checked.length === 0) { showToast('No chats selected.', 'error'); return; }
     const toImport = checked.map(cb => {
       const c = beeperChats[parseInt(cb.dataset.index, 10)];
-      return { name: c.name, chatId: c.chatId, username: c.username || c.name };
+      return { name: c.name, chatId: c.chatId, username: c.username || c.name, network: currentNetwork };
     });
     try {
       const res = await fetch('/api/recipients/import', {
@@ -917,7 +966,7 @@
       const data = await res.json();
       closeModal('beeperModal');
       await fetchRecipients();
-      addLogEntry('success', `Saved ${data.added} chats from Beeper.`);
+      addLogEntry('success', `Saved ${data.added} chats from Beeper (${currentNetwork}).`);
       showToast(`Saved ${data.added} recipients.`, 'success');
     } catch (err) {
       showToast(err.message, 'error');
@@ -1027,6 +1076,9 @@
   }
 
   function openUsernameModal() {
+    const label = NETWORK_LABELS[currentNetwork] || currentNetwork;
+    document.getElementById('usernameModalTitle').textContent = `📨 Send by ${label} Username`;
+    document.getElementById('usernameModalLabel').textContent = `${label} Username *`;
     document.getElementById('usernameInput').value = '';
     document.getElementById('usernameMessage').value = '';
     openModal('usernameModal');
@@ -1037,19 +1089,19 @@
     const message = document.getElementById('usernameMessage').value.trim();
     if (!username || !message) { showToast('Username and message are required.', 'error'); return; }
     try {
-      addLogEntry('info', `Sending to @${username}...`);
+      addLogEntry('info', `Sending to @${username} via ${currentNetwork}...`);
       const res = await fetch('/api/send-to-username', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, message }),
+        body: JSON.stringify({ username, message, network: currentNetwork }),
       });
       const data = await res.json();
       if (data.success) {
         closeModal('usernameModal');
-        addLogEntry('success', `✅ Sent to @${username}`);
+        addLogEntry('success', `✅ Sent to @${username} (${currentNetwork})`);
         showToast(`Sent to @${username}`, 'success');
       } else {
-        addLogEntry('error', `❌ Failed to send to @${username}: ${data.error}`);
+        addLogEntry('error', `❌ Failed: ${data.error}`);
         showToast(data.error || 'Send failed.', 'error');
       }
     } catch (err) {
